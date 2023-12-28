@@ -43,6 +43,18 @@ app.config['OAUTH2_PROVIDERS'] = {
         },
         'scopes': ['user:email'],
     },
+
+    'jira': {
+        'client_id': 'ffa7ed20817610a0247723777a065312',
+        'client_secret': 'aaf8f77393b957f2b862ef6ce659b8c245bec20def21bee1343b10ba5a616815',
+        'authorize_url': 'https://jira.local/rest/oauth2/latest/authorize',
+        'token_url': 'https://jira.local/rest/oauth2/latest/token',
+        'userinfo': {
+            'url': 'https://jira.local/rest/auth/1/session',
+            'email': lambda json: json['name'],
+        },
+        'scopes': ['WRITE'],
+    },
 }
 
 db = SQLAlchemy(app)
@@ -91,11 +103,12 @@ def oauth2_authorize(provider):
         'client_id': provider_data['client_id'],
         'redirect_uri': url_for('oauth2_callback', provider=provider,
                                 _external=True),
+        # 'redirect_uri': ' http://172.27.101.8:5000/callback/jira',
         'response_type': 'code',
         'scope': ' '.join(provider_data['scopes']),
         'state': session['oauth2_state'],
     })
-
+    print(provider_data['authorize_url'] + '?' + qs)
     # redirect the user to the OAuth2 provider authorization URL
     return redirect(provider_data['authorize_url'] + '?' + qs)
 
@@ -125,6 +138,7 @@ def oauth2_callback(provider):
     if 'code' not in request.args:
         abort(401)
 
+
     # exchange the authorization code for an access token
     response = requests.post(provider_data['token_url'], data={
         'client_id': provider_data['client_id'],
@@ -133,7 +147,7 @@ def oauth2_callback(provider):
         'grant_type': 'authorization_code',
         'redirect_uri': url_for('oauth2_callback', provider=provider,
                                 _external=True),
-    }, headers={'Accept': 'application/json'})
+    }, headers={'Accept': 'application/json', 'X-Atlassian-Token': 'nocheck' })
     if response.status_code != 200:
         abort(401)
     oauth2_token = response.json().get('access_token')
@@ -144,6 +158,7 @@ def oauth2_callback(provider):
     response = requests.get(provider_data['userinfo']['url'], headers={
         'Authorization': 'Bearer ' + oauth2_token,
         'Accept': 'application/json',
+        'X-Atlassian-Token': 'nocheck'
     })
     if response.status_code != 200:
         abort(401)
@@ -165,4 +180,7 @@ with app.app_context():
     db.create_all()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(
+        debug=True,
+        ssl_context=('adhoc'),
+        host='0.0.0.0')
